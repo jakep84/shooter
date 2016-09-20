@@ -1,77 +1,96 @@
-﻿var timeBetweenAttacks : float = 0.5f;     // The time in seconds between each attack.
-var attackDamage : int = 10;               // The amount of health taken away per attack.
+﻿var startingHealth : int = 100;            // The amount of health the enemy starts the game with.
+var currentHealth : int;                   // The current health the enemy has.
+var sinkSpeed : float = 2.5f;              // The speed at which the enemy sinks through the floor when dead.
+var scoreValue : int = 10;                 // The amount added to the player's score when the enemy dies.
+var deathClip : AudioClip;                 // The sound to play when the enemy dies.
 
+private var anim : Animator;                              // Reference to the animator.
+private var enemyAudio : AudioSource;                     // Reference to the audio source.
+private var hitParticles : ParticleSystem;                // Reference to the particle system that plays when the enemy is damaged.
+private var capsuleCollider : CapsuleCollider;            // Reference to the capsule collider.
+private var isDead : boolean;                                // Whether the enemy is dead.
+private var isSinking : boolean;                             // Whether the enemy has started sinking through the floor.
 
-private var anim : Animator;                              // Reference to the animator component.
-private var player : GameObject;                          // Reference to the player GameObject.
-private var playerHealth : PlayerHealth;                  // Reference to the player's health.
-private var enemyHealth : EnemyHealth;                    // Reference to this enemy's health.
-private var playerInRange : boolean;                         // Whether player is within the trigger collider and can be attacked.
-private var timer : float;                                // Timer for counting up to the next attack.
-
-
-function Awake ()
+function Awake()
 {
     // Setting up the references.
-    player = GameObject.FindGameObjectWithTag ("Player");
-    playerHealth = player.GetComponent (PlayerHealth);
-    enemyHealth = GetComponent(EnemyHealth);
     anim = GetComponent (Animator);
+    enemyAudio = GetComponent (AudioSource);
+    hitParticles = GetComponentInChildren (ParticleSystem);
+    capsuleCollider = GetComponent (CapsuleCollider);
+
+    // Setting the current health when the enemy first spawns.
+    currentHealth = startingHealth;
 }
-
-
-function OnTriggerEnter (other : Collider)
-{
-    // If the entering collider is the player...
-    if(other.gameObject == player)
-    {
-        // ... the player is in range.
-        playerInRange = true;
-    }
-}
-
-
-function OnTriggerExit (other : Collider)
-{
-    // If the exiting collider is the player...
-    if(other.gameObject == player)
-    {
-        // ... the player is no longer in range.
-        playerInRange = false;
-    }
-}
-
 
 function Update ()
 {
-    // Add the time since Update was last called to the timer.
-    timer += Time.deltaTime;
-
-    // If the timer exceeds the time between attacks, the player is in range and this enemy is alive...
-    if(timer >= timeBetweenAttacks && playerInRange && enemyHealth.currentHealth > 0)
+    // If the enemy should be sinking...
+    if(isSinking)
     {
-        // ... attack.
-        Attack ();
-    }
-
-    // If the player has zero or less health...
-    if(playerHealth.currentHealth <= 0)
-    {
-        // ... tell the animator the player is dead.
-        anim.SetTrigger ("PlayerDead");
+        // ... move the enemy down by the sinkSpeed per second.
+        transform.Translate (-Vector3.up * sinkSpeed * Time.deltaTime);
     }
 }
 
 
-function Attack ()
+public function TakeDamage (amount : int, hitPoint : Vector3)
 {
-    // Reset the timer.
-    timer = 0f;
+    // If the enemy is dead...
+    if(isDead)
+        // ... no need to take damage so exit the function.
+        return;
 
-    // If the player has health to lose...
-    if(playerHealth.currentHealth > 0)
+    // Play the hurt sound effect.
+    enemyAudio.Play ();
+
+    // Reduce the current health by the amount of damage sustained.
+    currentHealth -= amount;
+    
+    // Set the position of the particle system to where the hit was sustained.
+    hitParticles.transform.position = hitPoint;
+
+    // And play the particles.
+    hitParticles.Play();
+
+    // If the current health is less than or equal to zero...
+    if(currentHealth <= 0)
     {
-        // ... damage the player.
-        playerHealth.TakeDamage (attackDamage);
+        // ... the enemy is dead.
+        Death ();
     }
+}
+
+function Death ()
+{
+    // The enemy is dead.
+    isDead = true;
+
+    // Turn the collider into a trigger so shots can pass through it.
+    capsuleCollider.isTrigger = true;
+
+    // Tell the animator that the enemy is dead.
+    anim.SetTrigger ("Dead");
+
+    // Change the audio clip of the audio source to the death clip and play it (this will stop the hurt clip playing).
+    enemyAudio.clip = deathClip;
+    enemyAudio.Play ();
+}
+
+public function StartSinking ()
+{
+    // Find and disable the Nav Mesh Agent.
+    GetComponent (NavMeshAgent).enabled = false;
+
+    // Find the rigidbody component and make it kinematic (since we use Translate to sink the enemy).
+    GetComponent (Rigidbody).isKinematic = true;
+
+    // The enemy should no sink.
+    isSinking = true;
+
+    // Increase the score by the enemy's score value.
+    //ScoreManager.score += scoreValue;
+
+    // After 2 seconds destory the enemy.
+    Destroy (gameObject, 2f);
 }
